@@ -8,6 +8,11 @@ const BASE = process.env.BASE || 'http://localhost:3000';
 const USER = process.env.ADMIN_USER || 'admin';
 const PASS = process.env.ADMIN_PASSWORD || 'sneakers123';
 
+// Catalogue fixtures — keep these in step with scripts/seed.js.
+const SEARCH_TERM = 'air max';
+const PRODUCT_SKU = '604133-102';
+const PRODUCT_SLUG = 'nike-air-max-plus-white'; // has both in-stock and sold-out sizes
+
 let failures = 0;
 const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
@@ -25,22 +30,29 @@ page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
 await page.goto(BASE);
 check('homepage renders product cards', (await page.locator('.card').count()) >= 4);
 
-await page.fill('#site-search', 'dunk');
+await page.fill('#site-search', SEARCH_TERM);
 await page.waitForSelector('.suggest__item', { timeout: 4000 });
 check('search suggestions appear', (await page.locator('.suggest__item').count()) > 0);
 
-await page.goto(`${BASE}/sneakers?search=DD1391-100`);
+await page.goto(`${BASE}/sneakers?search=${encodeURIComponent(PRODUCT_SKU)}`);
 check('SKU search finds the pair', (await page.locator('.card').count()) === 1);
 
 /* 2. Product page: size gating ----------------------------------------- */
-await page.goto(`${BASE}/sneakers/nike-dunk-low-retro-white`);
+await page.goto(`${BASE}/sneakers/${PRODUCT_SLUG}`);
 const disabled = await page.locator('.size--out input[disabled]').count();
 check('unavailable sizes are disabled', disabled > 0, `${disabled} disabled`);
 
 await page.click('[data-add-to-cart]');
 check('add to cart is blocked without a size', await page.locator('[data-size-error]').evaluate((el) => el.classList.contains('is-visible')));
 
-await page.locator('.size:not(.size--out) input').first().check();
+// Pick a size with more than one pair so the cart quantity control is testable.
+const size = await page.evaluate(() => {
+  const inputs = [...document.querySelectorAll('.size:not(.size--out) input')];
+  const pick = inputs.find((i) => Number(i.dataset.stock) >= 2) || inputs[0];
+  return pick ? pick.value : null;
+});
+check('product has a selectable size', Boolean(size), `size ${size}`);
+await page.locator(`.size input[value="${size}"]`).check();
 await page.click('[data-add-to-cart]');
 await page.waitForTimeout(300);
 check('cart badge updates', (await page.locator('[data-cart-count]').textContent()) === '1');

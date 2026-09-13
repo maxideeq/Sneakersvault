@@ -175,6 +175,14 @@ function darken(hex, amount) {
   return toHex(toRgb(hex).map((c) => c * (1 - amount)));
 }
 
+/** Drop generated artwork so a reseed cannot leave orphans behind. */
+export function clearProductImages() {
+  if (!fs.existsSync(OUT_DIR)) return;
+  for (const file of fs.readdirSync(OUT_DIR)) {
+    if (file.endsWith('.svg')) fs.unlinkSync(path.join(OUT_DIR, file));
+  }
+}
+
 export function writeProductImages(slug, palette, label = '') {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const files = [];

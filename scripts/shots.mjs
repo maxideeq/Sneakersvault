@@ -45,8 +45,8 @@ const cartSeed = async (page, ctx) => {
     localStorage.setItem(
       'ss_cart_v1',
       JSON.stringify([
-        { productId: 'p_nike-dunk-low-retro-white', slug: 'nike-dunk-low-retro-white', name: 'Dunk Low Retro', brand: 'Nike', size: '43', qty: 1, price: 1499, image: '/img/products/nike-dunk-low-retro-white-1.svg', maxQty: 2 },
-        { productId: 'p_adidas-campus-00s-core-black', slug: 'adidas-campus-00s-core-black', name: 'Campus 00s', brand: 'Adidas', size: '44', qty: 1, price: 1299, image: '/img/products/adidas-campus-00s-core-black-1.svg', maxQty: 1 },
+        { productId: 'p_nike-air-max-plus-white', slug: 'nike-air-max-plus-white', name: 'Air Max Plus "White"', brand: 'Nike', size: '43', qty: 1, price: 2099, image: '/img/products/nike-air-max-plus-white-1.svg', maxQty: 3 },
+        { productId: 'p_nike-air-max-plus-og-hyper-blue', slug: 'nike-air-max-plus-og-hyper-blue', name: 'Air Max Plus "OG Hyper Blue"', brand: 'Nike', size: '44', qty: 1, price: 2799, image: '/img/products/nike-air-max-plus-og-hyper-blue-1.svg', maxQty: 1 },
       ]),
     );
   });
@@ -60,8 +60,8 @@ if (want('home')) await shot('home', '/');
 if (want('home-mobile')) await shot('home-mobile', '/', { width: 390, height: 844 });
 if (want('shop')) await shot('shop', '/sneakers');
 if (want('shop-mobile')) await shot('shop-mobile', '/sneakers', { width: 390, height: 844 });
-if (want('product')) await shot('product', '/sneakers/nike-dunk-low-retro-white');
-if (want('product-mobile')) await shot('product-mobile', '/sneakers/nike-dunk-low-retro-white', { width: 390, height: 844 });
+if (want('product')) await shot('product', '/sneakers/nike-air-max-plus-white');
+if (want('product-mobile')) await shot('product-mobile', '/sneakers/nike-air-max-plus-white', { width: 390, height: 844 });
 if (want('brands')) await shot('brands', '/brands');
 if (want('cart')) await shot('cart', '/cart', { before: cartSeed });
 if (want('cart-mobile')) await shot('cart-mobile', '/cart', { width: 390, height: 844, before: cartSeed });

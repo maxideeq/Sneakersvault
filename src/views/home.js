@@ -53,7 +53,7 @@ export function homePage() {
       <div class="prop">${icon('shield')}<h3>Verified before it ships</h3><p>Every pair is inspected and legit-checked in-house. Condition and flaws are always listed honestly.</p></div>
       <div class="prop">${icon('chat')}<h3>Personal confirmation</h3><p>No card forms, no surprises. Submit your order and we contact you to confirm payment and delivery.</p></div>
       <div class="prop">${icon('truck')}<h3>Fast Nordic shipping</h3><p>Tracked delivery across Sweden, free over ${s.freeShippingOver} SEK. Local pickup in Stockholm is welcome.</p></div>
-      <div class="prop">${icon('star')}<h3>Grails, not filler</h3><p>A tight, hand-picked rotation — Dunks, Jordans, 550s, Sambas and the collabs worth queuing for.</p></div>
+      <div class="prop">${icon('star')}<h3>Grails, not filler</h3><p>A tight, hand-picked rotation — Air Max Plus, Jordans, 550s and the runners worth queuing for.</p></div>
     </div>
   </div>
 </section>

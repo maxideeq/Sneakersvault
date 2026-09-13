@@ -114,7 +114,7 @@ export function productFormPage({ session, flash, product = null, errors = {}, v
         <div class="panel__body grid-2">
           <div class="field span-2">
             <label for="name">Name <span class="req">*</span></label>
-            <input id="name" name="name" value="${esc(v.name)}" placeholder="Dunk Low Panda" required>
+            <input id="name" name="name" value="${esc(v.name)}" placeholder="Air Max Plus &quot;Triple Black&quot;" required>
             ${errors.name ? `<small class="err">${esc(errors.name)}</small>` : ''}
           </div>
           <div class="field">
@@ -128,7 +128,7 @@ export function productFormPage({ session, flash, product = null, errors = {}, v
           </div>
           <div class="field">
             <label for="sku">SKU / product number</label>
-            <input id="sku" name="sku" value="${esc(v.sku)}" placeholder="DD1391-100">
+            <input id="sku" name="sku" value="${esc(v.sku)}" placeholder="604133-050">
           </div>
           <div class="field">
             <label for="price">Price (SEK) <span class="req">*</span></label>
@@ -200,7 +200,7 @@ export function productFormPage({ session, flash, product = null, errors = {}, v
           </div>
           <div class="field">
             <label for="imageUrls">…or paste image URLs (one per line)</label>
-            <textarea id="imageUrls" name="imageUrls" class="ta-sm" placeholder="/img/products/dunk-panda-1.svg"></textarea>
+            <textarea id="imageUrls" name="imageUrls" class="ta-sm" placeholder="/img/products/nike-air-max-plus-white-1.svg"></textarea>
           </div>
         </div>
       </section>

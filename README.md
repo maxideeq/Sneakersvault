@@ -18,25 +18,27 @@ and delivery details only, and every customer-facing surface says so plainly.
 
 ## Quick start
 
-```bash
-npm run seed        # one-off: writes the demo catalogue + product imagery
-npm start           # http://localhost:3000
-```
-
-The first boot creates the dashboard login and prints it in the terminal. Set
-your own before that first run:
+You need a Postgres database — [Neon](https://neon.tech) and
+[Supabase](https://supabase.com) both have a free tier with no card required.
+Copy the connection string it gives you into `.env`:
 
 ```bash
-cp .env.example .env      # then edit ADMIN_USER / ADMIN_PASSWORD
+cp .env.example .env      # then set DATABASE_URL, ADMIN_USER, ADMIN_PASSWORD
+npm install               # one dependency: pg
+npm run seed              # creates the tables and loads the demo catalogue
+npm start                 # http://localhost:3000
 ```
+
+If `ADMIN_USER` / `ADMIN_PASSWORD` are not set, the first boot generates a
+dashboard password and prints it in the terminal — save it.
 
 | URL | What it is |
 | --- | --- |
 | `/` | Storefront |
 | `/admin` | Seller dashboard (login required) |
 
-Node 20+ is the only requirement — **there are no dependencies to install.**
-The server, templating, router, datastore, session auth, multipart upload
+Node 20+ and Postgres are the only requirements. **`pg` is the single
+dependency** — the server, templating, router, session auth, multipart upload
 parser and SMTP client are all built on the Node standard library.
 
 ## What is included
@@ -146,7 +148,8 @@ storefront is a handful of kilobytes of CSS and JS.
 server.js              HTTP server, static files, error handling
 src/
   router.js            Storefront, JSON API and dashboard routes
-  db.js                JSON datastore (atomic writes, narrow repository API)
+  db.js                Postgres datastore (JSONB documents, async repository API)
+  env.js               .env loader shared by the server and the scripts
   catalog.js           Search, filters, sizes and inventory movements
   orders.js            Order validation, creation, statuses, emails
   auth.js              scrypt hashing, sessions, CSRF, throttling
@@ -160,7 +163,7 @@ scripts/
   images.js            Product image generator
   e2e.mjs              End-to-end journey check (npm run test:e2e)
   shots.mjs            Screenshot helper        (npm run shots)
-data/                  db.json, uploads/, outbox.log  (created at runtime)
+data/                  uploads/, outbox.log  (created at runtime)
 ```
 
 ### Product imagery
@@ -185,12 +188,24 @@ The end-to-end run covers browsing, search, size gating, cart maths, checkout
 validation, order submission, the confirmation page, order tracking, the
 dashboard login, status updates and the fact that `/admin` stays private.
 
+## Storage
+
+Products, brands, orders, notifications, settings, admin accounts and sessions
+live in Postgres, each table holding a JSONB `data` document plus a few indexed
+columns. Every repository method in `src/db.js` is async, and the call sites
+await it — nothing is cached in memory, so several instances can serve the same
+database safely.
+
+**Uploaded product photos are the exception**: they are written to
+`data/uploads/` on local disk. If your host has an ephemeral filesystem, either
+attach a small persistent disk, or add products using image URLs instead of
+uploads.
+
 ## Scaling and what comes next
 
-The catalogue lives in a single JSON file, which is fast and dependency-free for
-hundreds of sneakers. Everything the rest of the app touches goes through the
-small repository API in `src/db.js` (`products`, `brands`, `orders`, `settings`,
-…), so moving to SQLite or Postgres means reimplementing that one module.
+Everything the rest of the app touches goes through the repository API in
+`src/db.js` (`products`, `brands`, `orders`, `settings`, …), so a different
+database means reimplementing that one module.
 
 Adding a payment provider later does not disturb the order flow: orders already
 carry line items, totals, customer details and a status history, so a provider
@@ -199,8 +214,14 @@ becomes an extra status transition rather than a rewrite.
 ## Deploying
 
 Run `node server.js` behind a TLS-terminating reverse proxy (nginx, Caddy,
-Fly.io, a container platform — anything that can forward HTTP). Set `SITE_URL`
-to the public origin so canonical URLs, the sitemap and dashboard links in
-emails are correct, and forward `X-Forwarded-Proto` so session cookies are
-marked `Secure`. Persist the `data/` directory — it holds the catalogue, the
-orders and the uploaded images.
+Fly.io, a container platform — anything that can forward HTTP).
+
+- `DATABASE_URL` — your Postgres connection string. Certificate verification is
+  on by default; set `DATABASE_SSL_INSECURE=true` only if your provider uses a
+  private CA.
+- `SITE_URL` — the public origin, so canonical URLs, the sitemap and the
+  dashboard links in emails are right.
+- Forward `X-Forwarded-Proto` so session cookies are marked `Secure`.
+- Build command `npm install && npm run seed`, start command `npm start`. The
+  seeder only fills an empty database, so it is safe on every deploy.
+- Persist `data/uploads/` if sellers upload photos through the dashboard.

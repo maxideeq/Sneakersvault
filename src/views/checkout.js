@@ -3,8 +3,8 @@ import { settings } from '../db.js';
 import { layout, icon } from './layout.js';
 import { ORDER_STATUSES, statusMeta } from '../orders.js';
 
-export function cartPage() {
-  const s = settings.get();
+export async function cartPage() {
+  const s = await settings.get();
   const body = `<div class="wrap">
   <header class="page-head">
     <h1>Your cart</h1>
@@ -14,11 +14,11 @@ export function cartPage() {
     <noscript><p class="empty">Your cart needs JavaScript enabled. Please turn it on to review and submit your order.</p></noscript>
   </div>
 </div>`;
-  return layout({ title: 'Cart', body, active: '', description: 'Review the sneakers in your cart before submitting your order.' });
+  return layout({ title: 'Cart', body, settings: s, active: '', description: 'Review the sneakers in your cart before submitting your order.' });
 }
 
-export function checkoutPage() {
-  const s = settings.get();
+export async function checkoutPage() {
+  const s = await settings.get();
   const body = `<div class="wrap">
   <header class="page-head">
     <h1>Checkout</h1>
@@ -111,7 +111,7 @@ export function checkoutPage() {
     </aside>
   </div>
 </div>`;
-  return layout({ title: 'Checkout', body, active: '', description: 'Submit your sneaker order — no online payment required.' });
+  return layout({ title: 'Checkout', body, settings: s, active: '', description: 'Submit your sneaker order — no online payment required.' });
 }
 
 export function orderLines(order) {
@@ -134,8 +134,8 @@ export function orderLines(order) {
   </table>`;
 }
 
-export function confirmationPage(order) {
-  const s = settings.get();
+export async function confirmationPage(order) {
+  const s = await settings.get();
   const body = `<div class="wrap">
   <div class="confirm">
     <div class="confirm__tick">${icon('check')}</div>
@@ -174,10 +174,11 @@ export function confirmationPage(order) {
     </div>
   </div>
 </div>`;
-  return layout({ title: `Order #${order.number} received`, body, active: '', description: 'Your order has been received.' });
+  return layout({ title: `Order #${order.number} received`, body, settings: s, active: '', description: 'Your order has been received.' });
 }
 
-export function trackPage({ order = null, error = '', query = {} } = {}) {
+export async function trackPage({ order = null, error = '', query = {} } = {}) {
+  const s = await settings.get();
   const statuses = ORDER_STATUSES;
   const timeline = order
     ? `<ol class="spec kv-wide">
@@ -224,9 +225,9 @@ export function trackPage({ order = null, error = '', query = {} } = {}) {
     <aside class="summary">
       <h2>Need help?</h2>
       <p class="summary__note ta-left">Payment and delivery are always arranged personally. If you have not heard from us within 24 hours, get in touch and we will sort it out straight away.</p>
-      <a class="btn btn--ghost btn--block mt-14" href="mailto:${esc(settings.get().sellerEmail)}">Email the seller</a>
+      <a class="btn btn--ghost btn--block mt-14" href="mailto:${esc(s.sellerEmail)}">Email the seller</a>
     </aside>
   </div>
 </div>`;
-  return layout({ title: 'Track your order', body, active: '', description: 'Check the status of a submitted order.' });
+  return layout({ title: 'Track your order', body, settings: s, active: '', description: 'Check the status of a submitted order.' });
 }

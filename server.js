@@ -1,37 +1,30 @@
-// Sole Society — dependency-free Node HTTP server.
+// Sole Society — Node HTTP server backed by Postgres.
 //   node server.js            start on PORT (default 3000)
 //   npm run seed              load the demo catalogue
 
 import http from 'node:http';
-import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
-import { load, sessions } from './src/db.js';
-import { ensureAdmin } from './src/auth.js';
-import { route } from './src/router.js';
-import { PUBLIC_DIR, safeJoin, serveFile, html, SECURITY_HEADERS } from './src/http.js';
-import { errorPage } from './src/views/misc.js';
+import { loadEnv } from './src/env.js';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
+loadEnv(); // must run before db.js reads DATABASE_URL
 
-// Minimal .env loader so the app can be configured without extra tooling.
-function loadEnv() {
-  const file = path.join(ROOT, '.env');
-  if (!fs.existsSync(file)) return;
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-    if (!match) continue;
-    const value = match[2].replace(/^["']|["']$/g, '');
-    if (process.env[match[1]] === undefined) process.env[match[1]] = value;
-  }
+const { load, sessions, close } = await import('./src/db.js');
+const { ensureAdmin } = await import('./src/auth.js');
+const { route } = await import('./src/router.js');
+const { PUBLIC_DIR, safeJoin, serveFile, html, SECURITY_HEADERS } = await import('./src/http.js');
+const { errorPage } = await import('./src/views/misc.js');
+
+
+try {
+  await load();
+} catch (err) {
+  console.error(`\n  Could not reach the database: ${err.message}`);
+  console.error('  Check DATABASE_URL, then start again.\n');
+  process.exit(1);
 }
 
-loadEnv();
-load();
-
-const created = ensureAdmin();
-sessions.prune();
+const created = await ensureAdmin();
+await sessions.prune();
 
 const STATIC_CACHE = 'public, max-age=86400';
 
@@ -83,7 +76,10 @@ server.listen(port, () => {
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
-    server.close(() => process.exit(0));
+    server.close(async () => {
+      await close().catch(() => {});
+      process.exit(0);
+    });
     setTimeout(() => process.exit(0), 2000).unref();
   });
 }

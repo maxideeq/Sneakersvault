@@ -4,8 +4,8 @@ import { CATEGORIES, CONDITIONS, DEFAULT_SIZE_RUN, brandOf, brandsWithCounts, is
 import { icon } from './layout.js';
 import { adminShell } from './admin.js';
 
-export function productsPage({ session, flash, list, search = '', brand = '', stock = '' }) {
-  const allBrands = brandsWithCounts();
+export async function productsPage({ session, flash, list, search = '', brand = '', stock = '' }) {
+  const allBrands = await brandsWithCounts();
   const body = `
 <div class="toolbar">
   <form method="get" action="/admin/products">
@@ -70,7 +70,7 @@ export function productsPage({ session, flash, list, search = '', brand = '', st
     : '<p class="panel__empty">No products match. Try a different filter, or add your first sneaker.</p>'}
 </section>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Products',
     subtitle: 'Add, edit and retire sneakers. Everything here is what customers see on the storefront.',
     actions: `<a class="btn" href="/admin/products/new">${icon('plus')} Add sneaker</a>`,
@@ -81,7 +81,7 @@ export function productsPage({ session, flash, list, search = '', brand = '', st
   });
 }
 
-export function productFormPage({ session, flash, product = null, errors = {}, values = null }) {
+export async function productFormPage({ session, flash, product = null, errors = {}, values = null }) {
   const editing = Boolean(product);
   const v = values || {
     name: product?.name || '',
@@ -101,7 +101,7 @@ export function productFormPage({ session, flash, product = null, errors = {}, v
   const sizes = product?.sizes?.length
     ? product.sizes
     : DEFAULT_SIZE_RUN.map((size) => ({ size, stock: 0, reserved: 0, available: true }));
-  const allBrands = brandsRepo.all();
+  const allBrands = await brandsRepo.all();
 
   const body = `
 <form method="post" action="${editing ? `/admin/products/${esc(product.id)}` : '/admin/products'}" enctype="multipart/form-data" class="stack" data-product-form>
@@ -249,7 +249,7 @@ ${editing
 <script type="application/json" id="size-row-template">${jsonScript(sizeRowHtml({ size: '', stock: 0, reserved: 0, available: true, key: '__KEY__' }))}</script>
 <script type="application/json" id="default-size-run">${jsonScript(DEFAULT_SIZE_RUN)}</script>`;
 
-  return adminShell({
+  return await adminShell({
     title: editing ? `Edit — ${product.name}` : 'Add sneaker',
     subtitle: editing ? 'Update details, sizes, stock and images.' : 'Add a new pair to the catalogue.',
     actions: `<a class="btn btn--ghost" href="/admin/products">← All products</a>`,
@@ -279,8 +279,8 @@ function sizeRowHtml(row) {
 /* Inventory                                                           */
 /* ------------------------------------------------------------------ */
 
-export function inventoryPage({ session, flash, list, search = '' }) {
-  const mode = settings.get().inventoryMode;
+export async function inventoryPage({ session, flash, list, search = '' }) {
+  const mode = (await settings.get()).inventoryMode;
   const modeLabels = {
     reserve: 'Reserved on order (stock is held until you mark the order paid or cancelled)',
     reduce: 'Reduced on order (stock comes off immediately)',
@@ -340,7 +340,7 @@ export function inventoryPage({ session, flash, list, search = '' }) {
     : '<p class="panel__empty">No products yet.</p>'}
 </section>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Inventory',
     subtitle: 'How many pairs are available for each sneaker and size.',
     body,
@@ -354,8 +354,8 @@ export function inventoryPage({ session, flash, list, search = '' }) {
 /* Brands                                                              */
 /* ------------------------------------------------------------------ */
 
-export function brandsAdminPage({ session, flash }) {
-  const list = brandsWithCounts();
+export async function brandsAdminPage({ session, flash }) {
+  const list = await brandsWithCounts();
   const body = `
 <div class="order-grid">
   <section class="panel">
@@ -406,7 +406,7 @@ export function brandsAdminPage({ session, flash }) {
   </section>
 </div>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Brands',
     subtitle: 'Brands power the storefront navigation, filters and brand pages.',
     body,
@@ -420,8 +420,8 @@ export function brandsAdminPage({ session, flash }) {
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
-export function settingsPage({ session, flash, mailStatus }) {
-  const s = settings.get();
+export async function settingsPage({ session, flash, mailStatus }) {
+  const s = await settings.get();
   const body = `
 <div class="order-grid">
   <form method="post" action="/admin/settings" class="stack">
@@ -488,7 +488,7 @@ export function settingsPage({ session, flash, mailStatus }) {
   </div>
 </div>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Settings',
     subtitle: 'Store details, order handling and your dashboard account.',
     body,

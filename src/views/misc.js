@@ -4,8 +4,8 @@ import { brandsWithCounts } from '../catalog.js';
 import { layout, icon } from './layout.js';
 import { brandCard, breadcrumbs } from './components.js';
 
-export function brandsPage() {
-  const brands = brandsWithCounts();
+export async function brandsPage() {
+  const [brands, s] = await Promise.all([brandsWithCounts(), settings.get()]);
   const body = `<div class="wrap">
   ${breadcrumbs([{ href: '/', label: 'Home' }, { label: 'Brands' }])}
   <header class="page-head">
@@ -19,14 +19,15 @@ export function brandsPage() {
   return layout({
     title: 'Brands',
     body,
+    settings: s,
     active: 'brands',
     canonical: '/brands',
     description: 'Nike, Adidas, Jordan, New Balance, ASICS and more — browse authenticated sneakers by brand.',
   });
 }
 
-export function howItWorksPage() {
-  const s = settings.get();
+export async function howItWorksPage() {
+  const s = await settings.get();
   const body = `<div class="wrap">
   ${breadcrumbs([{ href: '/', label: 'Home' }, { label: 'How it works' }])}
   <header class="page-head">
@@ -73,13 +74,14 @@ export function howItWorksPage() {
   return layout({
     title: 'How it works',
     body,
+    settings: s,
     active: '',
     canonical: '/how-it-works',
     description: 'How ordering, payment and delivery work at Sole Society — order online, pay directly with the seller.',
   });
 }
 
-export function notFoundPage() {
+export function notFoundPage(settingsData) {
   const body = `<div class="wrap">
   <div class="confirm pt-xl">
     <p class="kicker">404</p>
@@ -91,10 +93,10 @@ export function notFoundPage() {
     </div>
   </div>
 </div>`;
-  return layout({ title: 'Page not found', body, active: '', description: 'Page not found.' });
+  return layout({ title: 'Page not found', body, settings: settingsData, active: '', description: 'Page not found.' });
 }
 
-export function errorPage() {
+export function errorPage(settingsData) {
   const body = `<div class="wrap">
   <div class="confirm pt-xl">
     <p class="kicker">500</p>
@@ -103,6 +105,6 @@ export function errorPage() {
     <div class="confirm__actions"><a class="btn btn--lg" href="/">Back home</a></div>
   </div>
 </div>`;
-  return layout({ title: 'Error', body, active: '' });
+  return layout({ title: 'Error', body, settings: settingsData, active: '' });
 }
 

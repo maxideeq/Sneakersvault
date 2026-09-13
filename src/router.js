@@ -11,7 +11,6 @@ import {
   products as productsRepo,
   settings,
   admins,
-  save,
   UPLOAD_DIR,
 } from './db.js';
 import {
@@ -84,6 +83,17 @@ const FLASHES = {
   'upload-failed': { type: 'error', message: 'One or more images could not be saved.' },
 };
 
+/** 404 rendered with the store's own header and footer. */
+async function notFound(req, res, status = 404) {
+  let s = null;
+  try {
+    s = await settings.get();
+  } catch {
+    /* database unreachable — the page falls back to built-in defaults */
+  }
+  return html(req, res, notFoundPage(s), status);
+}
+
 function flashFrom(url) {
   const code = url.searchParams.get('flash');
   return code && FLASHES[code] ? FLASHES[code] : null;
@@ -114,7 +124,7 @@ export async function route(req, res) {
   if (pathname.startsWith('/uploads/')) {
     const target = safeJoin(UPLOAD_DIR, pathname.slice('/uploads'.length));
     if (target && (await serveFile(req, res, target, { cache: 'public, max-age=604800' }))) return;
-    return html(req, res, notFoundPage(), 404);
+    return notFound(req, res);
   }
 
   if (pathname.startsWith('/admin')) return adminRoutes(req, res, url, pathname, method);
@@ -127,18 +137,18 @@ export async function route(req, res) {
 /* ------------------------------------------------------------------ */
 
 async function publicRoutes(req, res, url, pathname, method) {
-  if (method !== 'GET') return html(req, res, notFoundPage(), 405);
+  if (method !== 'GET') return notFound(req, res, 405);
   const params = parseQuery(url.searchParams.toString());
   const page = Math.max(1, Number(params.page) || 1);
 
-  if (pathname === '/') return html(req, res, homePage());
+  if (pathname === '/') return html(req, res, await homePage());
 
   if (pathname === '/sneakers') {
-    const { items } = queryProducts(params);
+    const { items } = await queryProducts(params);
     return html(
       req,
       res,
-      shopPage({
+      await shopPage({
         title: params.search ? `Search: ${params.search}` : 'All sneakers',
         lede: params.search
           ? `Results for “${params.search}” across names, brands and SKUs.`
@@ -152,11 +162,11 @@ async function publicRoutes(req, res, url, pathname, method) {
   }
 
   if (pathname === '/new-arrivals') {
-    const { items } = queryProducts({ ...params, tag: 'new' });
+    const { items } = await queryProducts({ ...params, tag: 'new' });
     return html(
       req,
       res,
-      shopPage({
+      await shopPage({
         title: 'New arrivals',
         lede: 'The latest pairs to land in the shop — freshly inspected and ready to ship.',
         items,
@@ -171,11 +181,11 @@ async function publicRoutes(req, res, url, pathname, method) {
   }
 
   if (pathname === '/popular') {
-    const { items } = queryProducts({ ...params, tag: 'popular', sort: params.sort || 'popular' });
+    const { items } = await queryProducts({ ...params, tag: 'popular', sort: params.sort || 'popular' });
     return html(
       req,
       res,
-      shopPage({
+      await shopPage({
         title: 'Popular sneakers',
         lede: 'The pairs everyone is asking for right now.',
         items,
@@ -189,18 +199,21 @@ async function publicRoutes(req, res, url, pathname, method) {
     );
   }
 
-  if (pathname === '/brands') return html(req, res, brandsPage());
+  if (pathname === '/brands') return html(req, res, await brandsPage());
 
   if (pathname.startsWith('/brands/')) {
-    const brand = brandsRepo.bySlug(pathname.slice('/brands/'.length));
-    if (!brand) return html(req, res, notFoundPage(), 404);
-    const { items } = queryProducts({ ...params, brand: [brand.slug] });
+    const brand = await brandsRepo.bySlug(pathname.slice('/brands/'.length));
+    if (!brand) return notFound(req, res);
+    const [{ items }, { storeName }] = await Promise.all([
+      queryProducts({ ...params, brand: [brand.slug] }),
+      settings.get(),
+    ]);
     return html(
       req,
       res,
-      shopPage({
+      await shopPage({
         title: brand.name,
-        lede: brand.description || `Every ${brand.name} pair currently available at ${settings.get().storeName}.`,
+        lede: brand.description || `Every ${brand.name} pair currently available at ${storeName}.`,
         items,
         params: { ...params, brand: [brand.slug] },
         basePath: `/brands/${brand.slug}`,
@@ -213,38 +226,38 @@ async function publicRoutes(req, res, url, pathname, method) {
   }
 
   if (pathname.startsWith('/sneakers/')) {
-    const product = productsRepo.bySlug(pathname.slice('/sneakers/'.length));
-    if (!product || product.active === false) return html(req, res, notFoundPage(), 404);
-    return html(req, res, productPage(product));
+    const product = await productsRepo.bySlug(pathname.slice('/sneakers/'.length));
+    if (!product || product.active === false) return notFound(req, res);
+    return html(req, res, await productPage(product));
   }
 
-  if (pathname === '/cart') return html(req, res, cartPage(), 200, { 'X-Robots-Tag': 'noindex' });
-  if (pathname === '/checkout') return html(req, res, checkoutPage(), 200, { 'X-Robots-Tag': 'noindex' });
-  if (pathname === '/how-it-works') return html(req, res, howItWorksPage());
+  if (pathname === '/cart') return html(req, res, await cartPage(), 200, { 'X-Robots-Tag': 'noindex' });
+  if (pathname === '/checkout') return html(req, res, await checkoutPage(), 200, { 'X-Robots-Tag': 'noindex' });
+  if (pathname === '/how-it-works') return html(req, res, await howItWorksPage());
 
   if (pathname === '/track') {
     const number = String(params.number || '').replace(/[^\d]/g, '');
     const email = String(params.email || '').trim().toLowerCase();
-    if (!number && !email) return html(req, res, trackPage({ query: params }), 200, { 'X-Robots-Tag': 'noindex' });
-    const order = ordersRepo.byNumber(number);
+    if (!number && !email) return html(req, res, await trackPage({ query: params }), 200, { 'X-Robots-Tag': 'noindex' });
+    const order = await ordersRepo.byNumber(number);
     if (!order || order.customer.email.toLowerCase() !== email) {
       return html(
         req,
         res,
-        trackPage({ error: 'No order matches that number and email. Check your confirmation email and try again.', query: params }),
+        await trackPage({ error: 'No order matches that number and email. Check your confirmation email and try again.', query: params }),
         404,
         { 'X-Robots-Tag': 'noindex' },
       );
     }
-    return html(req, res, trackPage({ order, query: params }), 200, { 'X-Robots-Tag': 'noindex' });
+    return html(req, res, await trackPage({ order, query: params }), 200, { 'X-Robots-Tag': 'noindex' });
   }
 
   if (pathname.startsWith('/order/')) {
     const number = pathname.slice('/order/'.length).replace(/[^\d]/g, '');
-    const order = ordersRepo.byNumber(number);
+    const order = await ordersRepo.byNumber(number);
     const token = url.searchParams.get('t');
-    if (!order || !token || token !== order.token) return html(req, res, notFoundPage(), 404);
-    return html(req, res, confirmationPage(order), 200, { 'X-Robots-Tag': 'noindex' });
+    if (!order || !token || token !== order.token) return notFound(req, res);
+    return html(req, res, await confirmationPage(order), 200, { 'X-Robots-Tag': 'noindex' });
   }
 
   if (pathname === '/robots.txt') {
@@ -287,7 +300,7 @@ ${urls
     return res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' }), res.end(body);
   }
 
-  return html(req, res, notFoundPage(), 404);
+  return notFound(req, res);
 }
 
 /* ------------------------------------------------------------------ */
@@ -298,7 +311,7 @@ async function apiRoutes(req, res, url, pathname, method) {
   if (pathname === '/api/search' && method === 'GET') {
     const q = url.searchParams.get('q') || '';
     const limit = Math.min(12, Math.max(1, Number(url.searchParams.get('limit')) || 6));
-    const { items } = queryProducts({ search: q });
+    const { items } = await queryProducts({ search: q });
     return json(
       req,
       res,
@@ -321,7 +334,7 @@ async function apiRoutes(req, res, url, pathname, method) {
 
   if (pathname === '/api/cart/validate' && method === 'POST') {
     const { fields } = await parseBody(req);
-    const { lines, problems } = resolveItems(fields.items);
+    const { lines, problems } = await resolveItems(fields.items);
     const items = lines.map((l) => ({
       productId: l.productId,
       slug: l.slug,
@@ -338,7 +351,7 @@ async function apiRoutes(req, res, url, pathname, method) {
       items,
       problems,
       changed: problems.length > 0 || items.length !== requested,
-      totals: totalsFor(lines),
+      totals: await totalsFor(lines),
     });
   }
 
@@ -353,7 +366,7 @@ async function apiRoutes(req, res, url, pathname, method) {
     if (Object.keys(errors).length) {
       return json(req, res, { ok: false, error: Object.values(errors)[0], fields: errors }, 400);
     }
-    const { lines, problems } = resolveItems(fields.items);
+    const { lines, problems } = await resolveItems(fields.items);
     if (!lines.length) {
       return json(
         req,
@@ -381,22 +394,22 @@ async function apiRoutes(req, res, url, pathname, method) {
 
 async function adminRoutes(req, res, url, pathname, method) {
   const secure = (req.headers['x-forwarded-proto'] || '').includes('https');
-  const session = sessionFromRequest(req);
+  const session = await sessionFromRequest(req);
   const noIndex = { 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' };
 
   if (pathname === '/admin/login' && method === 'POST') {
     const { fields } = await parseBody(req);
     const ip = clientIp(req);
-    if (!sameOrigin(req)) return html(req, res, loginPage({ error: 'Invalid request origin.' }), 403, noIndex);
+    if (!sameOrigin(req)) return html(req, res, await loginPage({ error: 'Invalid request origin.' }), 403, noIndex);
     if (throttled(ip)) {
-      return html(req, res, loginPage({ error: 'Too many failed attempts. Try again in a few minutes.' }), 429, noIndex);
+      return html(req, res, await loginPage({ error: 'Too many failed attempts. Try again in a few minutes.' }), 429, noIndex);
     }
-    const created = login(fields.username, fields.password, ip);
+    const created = await login(fields.username, fields.password, ip);
     if (!created) {
       return html(
         req,
         res,
-        loginPage({ error: 'Wrong username or password.', username: String(fields.username || '').slice(0, 60) }),
+        await loginPage({ error: 'Wrong username or password.', username: String(fields.username || '').slice(0, 60) }),
         401,
         noIndex,
       );
@@ -407,11 +420,11 @@ async function adminRoutes(req, res, url, pathname, method) {
 
   if (!session) {
     if (pathname === '/admin/logout') return redirect(res, '/admin');
-    return html(req, res, loginPage(), pathname === '/admin' ? 200 : 401, noIndex);
+    return html(req, res, await loginPage(), pathname === '/admin' ? 200 : 401, noIndex);
   }
 
   if (pathname === '/admin/logout' && method === 'POST') {
-    logout(session.token);
+    await logout(session.token);
     res.writeHead(303, { Location: '/admin', 'Set-Cookie': clearCookie() });
     return res.end();
   }
@@ -432,7 +445,7 @@ async function adminRoutes(req, res, url, pathname, method) {
   const page = (body, status = 200) => html(req, res, body, status, noIndex);
 
   if (pathname === '/admin' || pathname === '/admin/dashboard') {
-    return page(dashboardPage({ session, flash }));
+    return page(await dashboardPage({ session, flash }));
   }
 
   /* Orders ---------------------------------------------------------- */
@@ -440,7 +453,7 @@ async function adminRoutes(req, res, url, pathname, method) {
     const status = url.searchParams.get('status') || '';
     const search = (url.searchParams.get('search') || '').trim().toLowerCase();
     const current = Math.max(1, Number(url.searchParams.get('page')) || 1);
-    let list = ordersRepo.all();
+    let list = await ordersRepo.all();
     if (status) list = list.filter((o) => o.status === status);
     if (search) {
       list = list.filter((o) =>
@@ -458,34 +471,35 @@ async function adminRoutes(req, res, url, pathname, method) {
     }
     const pages = Math.max(1, Math.ceil(list.length / ADMIN_PAGE_SIZE));
     const slice = list.slice((current - 1) * ADMIN_PAGE_SIZE, current * ADMIN_PAGE_SIZE);
-    return page(ordersPage({ session, flash, list: slice, status, search: url.searchParams.get('search') || '', page: current, pages }));
+    return page(await ordersPage({ session, flash, list: slice, status, search: url.searchParams.get('search') || '', page: current, pages }));
   }
 
   const orderMatch = pathname.match(/^\/admin\/orders\/([^/]+)(\/(status|notes))?$/);
   if (orderMatch) {
-    const order = ordersRepo.byId(orderMatch[1]);
-    if (!order) return page(adminShell({ title: 'Order not found', body: '<p class="panel__empty">That order does not exist.</p>', active: 'orders', session }), 404);
+    const order = await ordersRepo.byId(orderMatch[1]);
+    if (!order) return page(await adminShell({ title: 'Order not found', body: '<p class="panel__empty">That order does not exist.</p>', active: 'orders', session }), 404);
 
     if (method === 'GET') {
-      const unread = notifications.all().filter((n) => n.orderId === order.id && !n.read);
-      unread.forEach((n) => notifications.markRead(n.id));
-      return page(orderDetailPage({ session, flash, order }));
+      const unread = (await notifications.all()).filter((n) => n.orderId === order.id && !n.read);
+      for (const n of unread) await notifications.markRead(n.id);
+      return page(await orderDetailPage({ session, flash, order }));
     }
     if (method === 'POST' && orderMatch[3] === 'status') {
-      setStatus(order, String(fields.status || ''), { note: String(fields.note || '').slice(0, 300) });
+      await setStatus(order, String(fields.status || ''), { note: String(fields.note || '').slice(0, 300) });
       return redirect(res, `/admin/orders/${order.id}?flash=status-updated`);
     }
     if (method === 'POST' && orderMatch[3] === 'notes') {
-      order.sellerNotes = String(fields.sellerNotes || '').slice(0, 4000);
-      save();
+      await ordersRepo.update(order.id, {
+        sellerNotes: String(fields.sellerNotes || '').slice(0, 4000),
+      });
       return redirect(res, `/admin/orders/${order.id}?flash=notes-saved`);
     }
   }
 
   /* Notifications ---------------------------------------------------- */
-  if (pathname === '/admin/notifications' && method === 'GET') return page(notificationsPage({ session, flash }));
+  if (pathname === '/admin/notifications' && method === 'GET') return page(await notificationsPage({ session, flash }));
   if (pathname === '/admin/notifications/read' && method === 'POST') {
-    notifications.markAllRead();
+    await notifications.markAllRead();
     return redirect(res, '/admin/notifications?flash=read-all');
   }
 
@@ -494,7 +508,7 @@ async function adminRoutes(req, res, url, pathname, method) {
     const search = (url.searchParams.get('search') || '').trim().toLowerCase();
     const brand = url.searchParams.get('brand') || '';
     const stock = url.searchParams.get('stock') || '';
-    let list = productsRepo.all().slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    let list = (await productsRepo.all()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     if (search) {
       list = list.filter((p) =>
         `${p.name} ${p.sku || ''} ${p.colorway || ''} ${brandOf(p).name}`.toLowerCase().includes(search),
@@ -505,49 +519,49 @@ async function adminRoutes(req, res, url, pathname, method) {
     if (stock === 'low') list = list.filter((p) => totalStock(p) > 0 && totalStock(p) <= 2);
     if (stock === 'out') list = list.filter((p) => totalStock(p) === 0);
     if (stock === 'hidden') list = list.filter((p) => p.active === false);
-    return page(productsPage({ session, flash, list, search: url.searchParams.get('search') || '', brand, stock }));
+    return page(await productsPage({ session, flash, list, search: url.searchParams.get('search') || '', brand, stock }));
   }
 
-  if (pathname === '/admin/products/new' && method === 'GET') return page(productFormPage({ session, flash }));
+  if (pathname === '/admin/products/new' && method === 'GET') return page(await productFormPage({ session, flash }));
 
   if (pathname === '/admin/products' && method === 'POST') {
     const result = await buildProductFromForm(fields, files);
-    if (result.errors) return page(productFormPage({ session, errors: result.errors, values: result.values }), 400);
+    if (result.errors) return page(await productFormPage({ session, errors: result.errors, values: result.values }), 400);
     const now = new Date().toISOString();
     const product = {
       id: makeId('p_'),
-      slug: uniqueSlug(`${brandsRepo.byId(result.data.brandId)?.name || ''} ${result.data.name}`),
+      slug: await uniqueSlug(`${(await brandsRepo.byId(result.data.brandId))?.name || ''} ${result.data.name}`),
       createdAt: now,
       updatedAt: now,
       salesCount: 0,
       ...result.data,
     };
-    productsRepo.insert(product);
+    await productsRepo.insert(product);
     return redirect(res, `/admin/products/${product.id}?flash=product-created`);
   }
 
   const productMatch = pathname.match(/^\/admin\/products\/([^/]+)(\/delete)?$/);
   if (productMatch && productMatch[1] !== 'new') {
-    const product = productsRepo.byId(productMatch[1]);
+    const product = await productsRepo.byId(productMatch[1]);
     if (!product) {
       return page(
-        adminShell({ title: 'Product not found', body: '<p class="panel__empty">That product does not exist.</p>', active: 'products', session }),
+        await adminShell({ title: 'Product not found', body: '<p class="panel__empty">That product does not exist.</p>', active: 'products', session }),
         404,
       );
     }
-    if (method === 'GET') return page(productFormPage({ session, flash, product }));
+    if (method === 'GET') return page(await productFormPage({ session, flash, product }));
     if (method === 'POST' && productMatch[2] === '/delete') {
-      productsRepo.remove(product.id);
+      await productsRepo.remove(product.id);
       return redirect(res, '/admin/products?flash=product-deleted');
     }
     if (method === 'POST') {
       const result = await buildProductFromForm(fields, files, product);
-      if (result.errors) return page(productFormPage({ session, product, errors: result.errors, values: result.values }), 400);
+      if (result.errors) return page(await productFormPage({ session, product, errors: result.errors, values: result.values }), 400);
       const renamed = result.data.name !== product.name || result.data.brandId !== product.brandId;
-      productsRepo.update(product.id, {
+      await productsRepo.update(product.id, {
         ...result.data,
         slug: renamed
-          ? uniqueSlug(`${brandsRepo.byId(result.data.brandId)?.name || ''} ${result.data.name}`, product.id)
+          ? await uniqueSlug(`${(await brandsRepo.byId(result.data.brandId))?.name || ''} ${result.data.name}`, product.id)
           : product.slug,
       });
       return redirect(res, `/admin/products/${product.id}?flash=product-updated`);
@@ -557,37 +571,37 @@ async function adminRoutes(req, res, url, pathname, method) {
   /* Inventory -------------------------------------------------------- */
   if (pathname === '/admin/inventory' && method === 'GET') {
     const search = (url.searchParams.get('search') || '').trim().toLowerCase();
-    let list = productsRepo.all().slice().sort((a, b) => a.name.localeCompare(b.name));
+    let list = (await productsRepo.all()).sort((a, b) => a.name.localeCompare(b.name));
     if (search) {
       list = list.filter((p) => `${p.name} ${p.sku || ''} ${brandOf(p).name}`.toLowerCase().includes(search));
     }
-    return page(inventoryPage({ session, flash, list, search: url.searchParams.get('search') || '' }));
+    return page(await inventoryPage({ session, flash, list, search: url.searchParams.get('search') || '' }));
   }
 
   const inventoryMatch = pathname.match(/^\/admin\/inventory\/([^/]+)$/);
   if (inventoryMatch && method === 'POST') {
-    const product = productsRepo.byId(inventoryMatch[1]);
+    const product = await productsRepo.byId(inventoryMatch[1]);
     if (product) {
       for (const row of product.sizes || []) {
         const raw = fields[`stock_${row.size}`];
         if (raw === undefined) continue;
         row.stock = Math.max(0, Math.round(Number(raw) || 0));
       }
-      productsRepo.update(product.id, { sizes: product.sizes });
+      await productsRepo.update(product.id, { sizes: product.sizes });
     }
     return redirect(res, '/admin/inventory?flash=stock-updated');
   }
 
   /* Brands ----------------------------------------------------------- */
-  if (pathname === '/admin/brands' && method === 'GET') return page(brandsAdminPage({ session, flash }));
+  if (pathname === '/admin/brands' && method === 'GET') return page(await brandsAdminPage({ session, flash }));
 
   if (pathname === '/admin/brands' && method === 'POST') {
     const name = String(fields.name || '').trim().slice(0, 60);
-    if (name && !brandsRepo.byName(name)) {
-      brandsRepo.insert({
+    if (name && !await brandsRepo.byName(name)) {
+      await brandsRepo.insert({
         id: makeId('b_'),
         name,
-        slug: uniqueBrandSlug(name),
+        slug: await uniqueBrandSlug(name),
         description: String(fields.description || '').trim().slice(0, 400),
         createdAt: new Date().toISOString(),
       });
@@ -597,27 +611,28 @@ async function adminRoutes(req, res, url, pathname, method) {
 
   const brandMatch = pathname.match(/^\/admin\/brands\/([^/]+)(\/delete)?$/);
   if (brandMatch && method === 'POST') {
-    const brand = brandsRepo.byId(brandMatch[1]);
+    const brand = await brandsRepo.byId(brandMatch[1]);
     if (!brand) return redirect(res, '/admin/brands');
     if (brandMatch[2] === '/delete') {
-      const inUse = productsRepo.all().some((p) => p.brandId === brand.id);
+      const inUse = (await productsRepo.all()).some((p) => p.brandId === brand.id);
       if (inUse) return redirect(res, '/admin/brands?flash=brand-in-use');
-      brandsRepo.remove(brand.id);
+      await brandsRepo.remove(brand.id);
       return redirect(res, '/admin/brands?flash=brand-deleted');
     }
     const name = String(fields.name || '').trim().slice(0, 60);
-    if (name) brandsRepo.update(brand.id, { name, slug: uniqueBrandSlug(name, brand.id) });
+    if (name) await brandsRepo.update(brand.id, { name, slug: await uniqueBrandSlug(name, brand.id) });
     return redirect(res, '/admin/brands?flash=brand-updated');
   }
 
   /* Settings --------------------------------------------------------- */
   if (pathname === '/admin/settings' && method === 'GET') {
-    return page(settingsPage({ session, flash, mailStatus: { configured: mailConfigured(), host: process.env.SMTP_HOST || '' } }));
+    return page(await settingsPage({ session, flash, mailStatus: { configured: mailConfigured(), host: process.env.SMTP_HOST || '' } }));
   }
 
   if (pathname === '/admin/settings' && method === 'POST') {
-    settings.update({
-      storeName: String(fields.storeName || '').trim().slice(0, 60) || settings.get().storeName,
+    const current = await settings.get();
+    await settings.update({
+      storeName: String(fields.storeName || '').trim().slice(0, 60) || current.storeName,
       tagline: String(fields.tagline || '').trim().slice(0, 160),
       sellerEmail: String(fields.sellerEmail || '').trim().slice(0, 120),
       sellerPhone: String(fields.sellerPhone || '').trim().slice(0, 40),
@@ -630,21 +645,19 @@ async function adminRoutes(req, res, url, pathname, method) {
   }
 
   if (pathname === '/admin/password' && method === 'POST') {
-    const admin = admins.byUsername(session.username);
+    const admin = await admins.byUsername(session.username);
     const next = String(fields.newPassword || '');
     if (!admin || !verifyPassword(String(fields.currentPassword || ''), admin.salt, admin.hash)) {
       return redirect(res, '/admin/settings?flash=password-wrong');
     }
     if (next.length < 8) return redirect(res, '/admin/settings?flash=password-short');
     const { salt, hash } = hashPassword(next);
-    admin.salt = salt;
-    admin.hash = hash;
-    save();
+    await admins.update(admin.username, { salt, hash });
     return redirect(res, '/admin/settings?flash=password-changed');
   }
 
   return page(
-    adminShell({ title: 'Not found', body: '<p class="panel__empty">That dashboard page does not exist.</p>', active: '', session }),
+    await adminShell({ title: 'Not found', body: '<p class="panel__empty">That dashboard page does not exist.</p>', active: '', session }),
     404,
   );
 }
@@ -672,7 +685,7 @@ async function buildProductFromForm(fields, files, existing = null) {
 
   const errors = {};
   if (!values.name) errors.name = 'A name is required.';
-  if (!brandsRepo.byId(values.brandId)) errors.brandId = 'Pick a brand.';
+  if (!await brandsRepo.byId(values.brandId)) errors.brandId = 'Pick a brand.';
   const price = Math.round(Number(values.price));
   if (!Number.isFinite(price) || price < 0) errors.price = 'Enter a price in SEK.';
   if (Object.keys(errors).length) return { errors, values };

@@ -15,5 +15,8 @@
     "images": "node scripts/images.js",
     "test:e2e": "node scripts/e2e.mjs",
     "shots": "node scripts/shots.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }

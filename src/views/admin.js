@@ -1,5 +1,5 @@
 import { esc, money, formatDate, relativeTime } from '../util.js';
-import { settings, orders as ordersRepo, products as productsRepo, notifications } from '../db.js';
+import { settings, orders as ordersRepo, products as productsRepo, notifications, stats } from '../db.js';
 import { ORDER_STATUSES, statusMeta } from '../orders.js';
 import { isSoldOut, totalStock } from '../catalog.js';
 import { icon } from './layout.js';
@@ -13,10 +13,12 @@ const NAV = [
   { href: '/admin/settings', label: 'Settings', key: 'settings', icon: 'user' },
 ];
 
-export function adminShell({ title, subtitle = '', actions = '', body, active, session, flash = null }) {
-  const s = settings.get();
-  const newOrders = ordersRepo.all().filter((o) => o.status === 'new').length;
-  const unread = notifications.unread().length;
+export async function adminShell({ title, subtitle = '', actions = '', body, active, session, flash = null }) {
+  const [s, newOrders, unread] = await Promise.all([
+    settings.get(),
+    stats.newOrders(),
+    stats.unreadNotifications(),
+  ]);
 
   return `<!doctype html>
 <html lang="en">
@@ -75,8 +77,8 @@ export function adminShell({ title, subtitle = '', actions = '', body, active, s
 </html>`;
 }
 
-export function loginPage({ error = '', username = '' } = {}) {
-  const s = settings.get();
+export async function loginPage({ error = '', username = '' } = {}) {
+  const s = await settings.get();
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -114,19 +116,22 @@ export function loginPage({ error = '', username = '' } = {}) {
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
 
-export function dashboardPage({ session, flash }) {
-  const all = ordersRepo.all();
+export async function dashboardPage({ session, flash }) {
+  const [all, catalogue, notificationList] = await Promise.all([
+    ordersRepo.all(),
+    productsRepo.active(),
+    notifications.all(),
+  ]);
   const newOrders = all.filter((o) => o.status === 'new');
   const openOrders = all.filter((o) => !['completed', 'cancelled'].includes(o.status));
   const paidRevenue = all
     .filter((o) => ['paid', 'processing', 'shipped', 'completed'].includes(o.status))
     .reduce((sum, o) => sum + o.total, 0);
   const pipeline = openOrders.reduce((sum, o) => sum + o.total, 0);
-  const catalogue = productsRepo.active();
   const soldOut = catalogue.filter(isSoldOut).length;
   const lowStock = catalogue.filter((p) => totalStock(p) > 0 && totalStock(p) <= 2);
   const recent = all.slice(0, 8);
-  const unread = notifications.all().slice(0, 6);
+  const unread = notificationList.slice(0, 6);
 
   const body = `
 <div class="stats">
@@ -202,7 +207,7 @@ export function dashboardPage({ session, flash }) {
   </section>
 </div>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Overview',
     subtitle: `${formatDate(new Date().toISOString())} · ${newOrders.length} new order(s) to action`,
     actions: `<a class="btn" href="/admin/products/new">${icon('plus')} Add sneaker</a>`,
@@ -247,17 +252,13 @@ export function orderTable(list) {
 </table></div>`;
 }
 
-export function ordersPage({ session, flash, list, status = '', search = '', page = 1, pages = 1 }) {
-  const counts = ordersRepo.all().reduce((acc, o) => {
-    acc[o.status] = (acc[o.status] || 0) + 1;
-    return acc;
-  }, {});
+export async function ordersPage({ session, flash, list, counts = {}, total = 0, status = '', search = '', page = 1, pages = 1 }) {
   const tabHref = (st) => `/admin/orders${st ? `?status=${st}` : ''}${search ? `${st ? '&' : '?'}search=${encodeURIComponent(search)}` : ''}`;
 
   const body = `
 <div class="toolbar">
   <div class="filter-tabs">
-    <a href="${esc(tabHref(''))}" class="${!status ? 'is-active' : ''}">All (${ordersRepo.all().length})</a>
+    <a href="${esc(tabHref(''))}" class="${!status ? 'is-active' : ''}">All (${total})</a>
     ${ORDER_STATUSES.map(
       (st) => `<a href="${esc(tabHref(st))}" class="${status === st ? 'is-active' : ''}">${esc(statusMeta(st).label)}${counts[st] ? ` (${counts[st]})` : ''}</a>`,
     ).join('')}
@@ -282,7 +283,7 @@ export function ordersPage({ session, flash, list, status = '', search = '', pag
     : ''}
 </section>`;
 
-  return adminShell({
+  return await adminShell({
     title: 'Orders',
     subtitle: 'Every order submitted through the website. Open one to contact the customer and update its status.',
     body,
@@ -292,7 +293,7 @@ export function ordersPage({ session, flash, list, status = '', search = '', pag
   });
 }
 
-export function orderDetailPage({ session, flash, order }) {
+export async function orderDetailPage({ session, flash, order }) {
   const meta = statusMeta(order.status);
   const c = order.customer;
   const body = `
@@ -403,7 +404,7 @@ export function orderDetailPage({ session, flash, order }) {
   </div>
 </div>`;
 
-  return adminShell({
+  return await adminShell({
     title: `Order #${order.number}`,
     subtitle: `${esc(c.firstName)} ${esc(c.lastName)} · ${money(order.total)}`,
     actions: `<a class="btn btn--ghost" href="/admin/orders">← All orders</a>`,
@@ -414,8 +415,8 @@ export function orderDetailPage({ session, flash, order }) {
   });
 }
 
-export function notificationsPage({ session, flash }) {
-  const list = notifications.all();
+export async function notificationsPage({ session, flash }) {
+  const list = await notifications.all();
   const body = `
 <section class="panel">
   <div class="panel__head">
@@ -440,7 +441,7 @@ export function notificationsPage({ session, flash }) {
         .join('')
     : '<p class="panel__empty">No notifications yet.</p>'}
 </section>`;
-  return adminShell({
+  return await adminShell({
     title: 'Notifications',
     subtitle: 'Every new order raises a notification here — and an email to the seller address if SMTP is configured.',
     body,

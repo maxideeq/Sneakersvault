@@ -2,9 +2,13 @@
 //   npm run seed            fills an empty database
 //   npm run reset           wipes products/brands/orders and reseeds
 
-import { load, db, replaceAll, save } from '../src/db.js';
-import { slugify } from '../src/util.js';
-import { clearProductImages, writeProductImages, writeSiteImages } from './images.js';
+import { loadEnv } from '../src/env.js';
+
+loadEnv(); // must run before db.js reads DATABASE_URL
+
+const { load, replaceAll, close, products: productsRepo } = await import('../src/db.js');
+const { slugify } = await import('../src/util.js');
+const { clearProductImages, writeProductImages, writeSiteImages } = await import('./images.js');
 
 const FORCE = process.argv.includes('--force');
 
@@ -150,11 +154,18 @@ function build() {
   return { brands, products };
 }
 
-load();
-const state = db();
+try {
+  await load();
+} catch (err) {
+  console.error(`Could not reach the database: ${err.message}`);
+  console.error('Set DATABASE_URL (see MIGRATION.md) and try again.');
+  process.exit(1);
+}
 
-if (state.products.length && !FORCE) {
-  console.log(`Database already holds ${state.products.length} products. Use "npm run reset" to replace them.`);
+const existing = await productsRepo.all();
+if (existing.length && !FORCE) {
+  console.log(`Database already holds ${existing.length} products. Use "npm run reset" to replace them.`);
+  await close();
   process.exit(0);
 }
 
@@ -162,16 +173,14 @@ writeSiteImages();
 clearProductImages();
 const { brands, products } = build();
 
-if (FORCE) {
-  state.orders = [];
-  state.notifications = [];
-  state.counters.order = 10023;
-}
-state.brands = brands;
-state.products = products;
-
-await replaceAll(state);
-await save();
+// A plain seed only replaces the catalogue; --force also clears orders,
+// notifications and the order counter.
+await replaceAll({
+  brands,
+  products,
+  ...(FORCE ? { orders: [], notifications: [], counters: { order: 10023 } } : {}),
+});
+await close();
 
 console.log(`Seeded ${brands.length} brands and ${products.length} sneakers.`);
 console.log('Product imagery written to public/img/products/.');

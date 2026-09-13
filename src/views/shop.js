@@ -1,5 +1,6 @@
 import { esc, money } from '../util.js';
 import { allSizes, brandsWithCounts, CATEGORIES, priceBounds, SORTS, toArray } from '../catalog.js';
+import { settings } from '../db.js';
 import { layout, icon } from './layout.js';
 import { productGrid, pagination, breadcrumbs } from './components.js';
 
@@ -50,10 +51,7 @@ function activeChips(params, basePath, brands) {
   return chips.length ? `<div class="chips">${chips.join('')}</div>` : '';
 }
 
-function filterPanel(params, basePath) {
-  const brands = brandsWithCounts().filter((b) => b.count > 0);
-  const sizes = allSizes();
-  const bounds = priceBounds();
+function filterPanel(params, basePath, { brands, sizes, bounds }) {
   const selectedBrands = toArray(params.brand);
   const selectedSizes = toArray(params.size);
   const selectedCats = toArray(params.category);
@@ -132,7 +130,7 @@ function filterPanel(params, basePath) {
   </form>`;
 }
 
-export function shopPage({
+export async function shopPage({
   title,
   lede = '',
   items,
@@ -148,7 +146,13 @@ export function shopPage({
   const current = Math.min(Math.max(1, page), pages);
   const slice = items.slice((current - 1) * PER_PAGE, current * PER_PAGE);
   const sort = params.sort && SORTS[params.sort] ? params.sort : params.search ? 'relevance' : 'newest';
-  const brands = brandsWithCounts();
+  const [brands, sizes, bounds, s] = await Promise.all([
+    brandsWithCounts(),
+    allSizes(),
+    priceBounds(),
+    settings.get(),
+  ]);
+  const filterData = { brands: brands.filter((b) => b.count > 0), sizes, bounds };
 
   const sortForm = `<form method="get" action="${esc(basePath)}">
     ${Object.entries(params)
@@ -172,7 +176,7 @@ export function shopPage({
     ${lede ? `<p>${esc(lede)}</p>` : ''}
   </header>
   <div class="${showFilters ? 'shop' : ''}">
-    ${showFilters ? filterPanel(params, basePath) : ''}
+    ${showFilters ? filterPanel(params, basePath, filterData) : ''}
     <div>
       <div class="shop__toolbar">
         ${showFilters ? `<button class="btn btn--ghost btn--sm filter-toggle" type="button" data-filter-toggle>${icon('filter')} Filters</button>` : ''}
@@ -192,6 +196,7 @@ export function shopPage({
     body,
     active,
     canonical,
+    settings: s,
     searchValue: params.search || '',
   });
 }

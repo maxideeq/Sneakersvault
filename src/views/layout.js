@@ -1,7 +1,6 @@
 // The public site shell: <head>, header/nav, cart drawer, footer.
 
 import { esc, jsonScript } from '../util.js';
-import { settings } from '../db.js';
 
 const NAV = [
   { href: '/', label: 'Home', key: 'home' },
@@ -36,6 +35,7 @@ export function icon(name, cls = '') {
   return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
 }
 
+/** `settings` is passed in by the page view — layout never touches the store. */
 export function layout({
   title,
   description = '',
@@ -46,8 +46,17 @@ export function layout({
   jsonLd = null,
   bodyClass = '',
   searchValue = '',
+  settings: settingsData,
 }) {
-  const s = settings.get();
+  // Error pages can render before settings are readable, so fall back safely.
+  const s = {
+    storeName: 'Sole Society',
+    tagline: 'Curated grails, verified pairs, shipped from Stockholm.',
+    sellerEmail: '',
+    sellerPhone: '',
+    freeShippingOver: 2000,
+    ...(settingsData || {}),
+  };
   const siteUrl = (process.env.SITE_URL || '').replace(/\/$/, '');
   const fullTitle = title ? `${title} — ${s.storeName}` : `${s.storeName} — ${s.tagline}`;
   const desc = description || s.tagline;

@@ -4,17 +4,23 @@ import { brandsWithCounts, brandOf, queryProducts } from '../catalog.js';
 import { layout, icon } from './layout.js';
 import { productGrid, sectionHead } from './components.js';
 
-export function homePage() {
-  const s = settings.get();
-  const featured = queryProducts({ tag: 'featured', availability: 'in-stock', sort: 'newest' }).items.slice(0, 4);
-  const newest = queryProducts({ tag: 'new', sort: 'newest' }).items.slice(0, 4);
-  const popular = queryProducts({ tag: 'popular', sort: 'popular' }).items.slice(0, 4);
-  const brands = brandsWithCounts().filter((b) => b.count > 0).slice(0, 7);
+export async function homePage() {
+  const [s, featuredQuery, newQuery, popularQuery, allBrands, inStock] = await Promise.all([
+    settings.get(),
+    queryProducts({ tag: 'featured', availability: 'in-stock', sort: 'newest' }),
+    queryProducts({ tag: 'new', sort: 'newest' }),
+    queryProducts({ tag: 'popular', sort: 'popular' }),
+    brandsWithCounts(),
+    queryProducts({ availability: 'in-stock' }),
+  ]);
+  const featured = featuredQuery.items.slice(0, 4);
+  const newest = newQuery.items.slice(0, 4);
+  const popular = popularQuery.items.slice(0, 4);
+  const brands = allBrands.filter((b) => b.count > 0).slice(0, 7);
   const hero =
-    featured.slice().sort((a, b) => (b.salesCount || 0) - (a.salesCount || 0))[0] ||
-    queryProducts({ sort: 'newest' }).items[0];
+    featured.slice().sort((a, b) => (b.salesCount || 0) - (a.salesCount || 0))[0] || inStock.items[0];
   const heroBrand = hero ? brandOf(hero) : null;
-  const totalPairs = queryProducts({ availability: 'in-stock' }).items.length;
+  const totalPairs = inStock.items.length;
 
   const body = `
 <section class="hero">
@@ -127,6 +133,7 @@ export function homePage() {
     active: 'home',
     canonical: '/',
     ogImage: hero?.images?.[0] || '',
+    settings: s,
     jsonLd: {
       '@context': 'https://schema.org',
       '@type': 'Store',

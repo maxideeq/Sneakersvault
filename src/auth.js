@@ -43,14 +43,14 @@ export function clearFailures(ip) {
   attempts.delete(ip);
 }
 
-export function login(username, password, ip) {
-  const admin = admins.byUsername(username);
+export async function login(username, password, ip) {
+  const admin = await admins.byUsername(username);
   if (!admin || !verifyPassword(password, admin.salt, admin.hash)) {
     noteFailure(ip);
     return null;
   }
   clearFailures(ip);
-  sessions.prune();
+  await sessions.prune();
   const session = {
     token: crypto.randomBytes(32).toString('hex'),
     csrf: crypto.randomBytes(24).toString('hex'),
@@ -58,21 +58,21 @@ export function login(username, password, ip) {
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
   };
-  sessions.insert(session);
+  await sessions.insert(session);
   return session;
 }
 
-export function logout(token) {
-  if (token) sessions.remove(token);
+export async function logout(token) {
+  if (token) await sessions.remove(token);
 }
 
-export function sessionFromRequest(req) {
+export async function sessionFromRequest(req) {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token) return null;
-  const session = sessions.find(token);
+  const session = await sessions.find(token);
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() < Date.now()) {
-    sessions.remove(token);
+    await sessions.remove(token);
     return null;
   }
   return session;
@@ -112,11 +112,17 @@ export function checkCsrf(session, token) {
 }
 
 /** Create the seller account on first boot if none exists. */
-export function ensureAdmin() {
-  if (admins.all().length) return null;
+export async function ensureAdmin() {
+  if ((await admins.all()).length) return null;
   const username = process.env.ADMIN_USER || 'admin';
   const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
   const { salt, hash } = hashPassword(password);
-  admins.insert({ username, salt, hash, createdAt: new Date().toISOString() });
+  await admins.insert({
+    id: crypto.randomUUID(),
+    username,
+    salt,
+    hash,
+    createdAt: new Date().toISOString(),
+  });
   return { username, password, generated: !process.env.ADMIN_PASSWORD };
 }

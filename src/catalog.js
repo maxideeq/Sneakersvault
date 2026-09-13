@@ -42,8 +42,26 @@ export function productBadge(product) {
   return null;
 }
 
+/**
+ * Attach each product's brand record so the view layer can stay synchronous
+ * and a page of 12 cards costs one brands query instead of twelve.
+ * The property is non-enumerable, so it never leaks back into the database
+ * through a spread or JSON.stringify.
+ */
+export async function withBrands(list) {
+  const all = await brands.all();
+  const byId = new Map(all.map((b) => [b.id, b]));
+  for (const product of list) {
+    const brand = byId.get(product.brandId) || { name: product.brandName || 'Unknown', slug: '' };
+    Object.defineProperty(product, '_brand', { value: brand, enumerable: false, configurable: true });
+  }
+  return list;
+}
+
+/** Synchronous — reads the brand attached by withBrands(). */
 export function brandOf(product) {
-  return brands.byId(product.brandId) || { name: product.brandName || 'Unknown', slug: '' };
+  if (!product) return { name: 'Unknown', slug: '' };
+  return product._brand || { name: product.brandName || 'Unknown', slug: '' };
 }
 
 /** Normalise a size list coming from the admin form. */
@@ -64,23 +82,21 @@ export function normaliseSizes(rows) {
     .sort((a, b) => Number(a.size) - Number(b.size));
 }
 
-export function uniqueSlug(name, ignoreId = null) {
+export async function uniqueSlug(name, ignoreId = null) {
   const base = slugify(name) || 'sneaker';
+  const taken = (await products.all()).filter((p) => p.id !== ignoreId).map((p) => p.slug);
   let candidate = base;
   let n = 2;
-  while (products.all().some((p) => p.slug === candidate && p.id !== ignoreId)) {
-    candidate = `${base}-${n++}`;
-  }
+  while (taken.includes(candidate)) candidate = `${base}-${n++}`;
   return candidate;
 }
 
-export function uniqueBrandSlug(name, ignoreId = null) {
+export async function uniqueBrandSlug(name, ignoreId = null) {
   const base = slugify(name) || 'brand';
+  const taken = (await brands.all()).filter((b) => b.id !== ignoreId).map((b) => b.slug);
   let candidate = base;
   let n = 2;
-  while (brands.all().some((b) => b.slug === candidate && b.id !== ignoreId)) {
-    candidate = `${base}-${n++}`;
-  }
+  while (taken.includes(candidate)) candidate = `${base}-${n++}`;
   return candidate;
 }
 
@@ -120,8 +136,8 @@ function matchScore(product, brand, terms) {
  * Filter + sort the catalogue.
  * @param {object} q  { search, brand[], size[], min, max, category[], availability, tag, sort }
  */
-export function queryProducts(q = {}) {
-  const list = products.active();
+export async function queryProducts(q = {}) {
+  const list = await withBrands(await products.active());
   const terms = String(q.search || '')
     .toLowerCase()
     .split(/\s+/)
@@ -182,24 +198,23 @@ export function toArray(value) {
 }
 
 /** Every size that exists anywhere in the catalogue, for the filter sidebar. */
-export function allSizes() {
+export async function allSizes() {
   const set = new Set();
-  for (const p of products.active()) for (const s of p.sizes || []) set.add(String(s.size));
+  for (const p of await products.active()) for (const s of p.sizes || []) set.add(String(s.size));
   return [...set].sort((a, b) => Number(a) - Number(b));
 }
 
-export function priceBounds() {
-  const prices = products.active().map((p) => p.price);
+export async function priceBounds() {
+  const prices = (await products.active()).map((p) => p.price);
   if (!prices.length) return { min: 0, max: 5000 };
   return { min: Math.min(...prices), max: Math.max(...prices) };
 }
 
 /** Brands with a live product count, for the brands page and filters. */
-export function brandsWithCounts() {
+export async function brandsWithCounts() {
   const counts = new Map();
-  for (const p of products.active()) counts.set(p.brandId, (counts.get(p.brandId) || 0) + 1);
-  return brands
-    .all()
+  for (const p of await products.active()) counts.set(p.brandId, (counts.get(p.brandId) || 0) + 1);
+  return (await brands.all())
     .map((b) => ({ ...b, count: counts.get(b.id) || 0 }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
@@ -213,48 +228,65 @@ export function brandsWithCounts() {
  * reserve -> hold the pair (stock stays, availability drops)
  * reduce  -> take it straight out of stock
  * none    -> stock is managed manually
+ *
+ * Each product is written back explicitly — the store hands out detached
+ * copies, so mutating them in memory would persist nothing.
  */
-export function applyOrderToInventory(items) {
-  const mode = settings.get().inventoryMode;
+export async function applyOrderToInventory(items) {
+  const mode = (await settings.get()).inventoryMode;
   if (mode === 'none') return;
   for (const item of items) {
-    const product = products.byId(item.productId);
+    const product = await products.byId(item.productId);
     if (!product) continue;
     const row = sizeRow(product, item.size);
     if (!row) continue;
     if (mode === 'reduce') row.stock = Math.max(0, (row.stock || 0) - item.quantity);
     else row.reserved = (row.reserved || 0) + item.quantity;
-    product.salesCount = (product.salesCount || 0) + item.quantity;
+    await products.update(product.id, {
+      sizes: product.sizes,
+      salesCount: (product.salesCount || 0) + item.quantity,
+    });
   }
 }
 
-/** Put stock back when an order is cancelled. */
-export function releaseOrderInventory(order) {
-  const mode = settings.get().inventoryMode;
-  if (mode === 'none' || order.inventoryReleased) return;
+/**
+ * Put stock back when an order is cancelled.
+ * @returns {Promise<boolean>} true when stock was actually released, so the
+ * caller can record it on the order.
+ */
+export async function releaseOrderInventory(order) {
+  const mode = (await settings.get()).inventoryMode;
+  if (mode === 'none' || order.inventoryReleased) return false;
   for (const item of order.items) {
-    const product = products.byId(item.productId);
+    const product = await products.byId(item.productId);
     if (!product) continue;
     const row = sizeRow(product, item.size);
     if (!row) continue;
     if (mode === 'reduce') row.stock = (row.stock || 0) + item.quantity;
     else row.reserved = Math.max(0, (row.reserved || 0) - item.quantity);
-    product.salesCount = Math.max(0, (product.salesCount || 0) - item.quantity);
+    await products.update(product.id, {
+      sizes: product.sizes,
+      salesCount: Math.max(0, (product.salesCount || 0) - item.quantity),
+    });
   }
-  order.inventoryReleased = true;
+  return true;
 }
 
-/** A reserved pair becomes a sold pair once the seller marks the order paid/completed. */
-export function commitOrderInventory(order) {
-  const mode = settings.get().inventoryMode;
-  if (mode !== 'reserve' || order.inventoryCommitted) return;
+/**
+ * A reserved pair becomes a sold pair once the seller marks the order paid.
+ * @returns {Promise<boolean>} true when the reservation was converted.
+ */
+export async function commitOrderInventory(order) {
+  const mode = (await settings.get()).inventoryMode;
+  if (mode !== 'reserve' || order.inventoryCommitted) return false;
   for (const item of order.items) {
-    const product = products.byId(item.productId);
+    const product = await products.byId(item.productId);
     if (!product) continue;
     const row = sizeRow(product, item.size);
     if (!row) continue;
     row.reserved = Math.max(0, (row.reserved || 0) - item.quantity);
     row.stock = Math.max(0, (row.stock || 0) - item.quantity);
+    await products.update(product.id, { sizes: product.sizes });
   }
-  order.inventoryCommitted = true;
+  return true;
 }

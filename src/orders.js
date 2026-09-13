@@ -1,10 +1,9 @@
 // Order creation, status handling and the notifications/emails that follow.
 
 import crypto from 'node:crypto';
-import { orders, products, settings, notifications, nextOrderNumber, save } from './db.js';
+import { orders, products, brands, settings, notifications, nextOrderNumber } from './db.js';
 import {
   applyOrderToInventory,
-  brandOf,
   commitOrderInventory,
   releaseOrderInventory,
   sizeAvailable,
@@ -83,20 +82,20 @@ export function validateCustomer(input) {
  * Resolve raw cart lines against the live catalogue.
  * Prices always come from the server — never from the client.
  */
-export function resolveItems(rawItems) {
+export async function resolveItems(rawItems) {
   const lines = [];
   const problems = [];
   const seen = new Map();
 
   for (const raw of Array.isArray(rawItems) ? rawItems.slice(0, 40) : []) {
-    const product = products.byId(String(raw.productId || ''));
+    const product = await products.byId(String(raw.productId || ''));
     if (!product || product.active === false) {
       problems.push('One of the sneakers in your cart is no longer available.');
       continue;
     }
     const size = String(raw.size || '').replace(',', '.');
     const row = sizeRow(product, size);
-    const brand = brandOf(product);
+    const brand = (await brands.byId(product.brandId)) || { name: '' };
     const available = sizeAvailable(row);
     const key = `${product.id}::${size}`;
     const wanted = Math.max(1, Math.min(Math.round(Number(raw.qty) || 1), 10));
@@ -139,8 +138,8 @@ export function resolveItems(rawItems) {
   return { lines, problems };
 }
 
-export function totalsFor(lines, deliveryMethod = '') {
-  const s = settings.get();
+export async function totalsFor(lines, deliveryMethod = '') {
+  const s = await settings.get();
   const subtotal = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
   const collected = /pickup/i.test(deliveryMethod);
   const shipping =
@@ -153,9 +152,9 @@ export function totalsFor(lines, deliveryMethod = '') {
 /* ------------------------------------------------------------------ */
 
 export async function createOrder({ customer, lines, source = 'web' }) {
-  const { subtotal, shipping, total } = totalsFor(lines, customer.deliveryMethod);
+  const { subtotal, shipping, total } = await totalsFor(lines, customer.deliveryMethod);
   const now = new Date().toISOString();
-  const number = nextOrderNumber();
+  const number = await nextOrderNumber();
 
   const order = {
     id: crypto.randomUUID(),
@@ -174,11 +173,10 @@ export async function createOrder({ customer, lines, source = 'web' }) {
     sellerNotes: '',
   };
 
-  applyOrderToInventory(order.items);
-  orders.insert(order);
-  save();
+  await applyOrderToInventory(order.items);
+  await orders.insert(order);
 
-  notifications.push({
+  await notifications.push({
     id: crypto.randomUUID(),
     type: 'order',
     orderId: order.id,
@@ -198,23 +196,27 @@ export async function createOrder({ customer, lines, source = 'web' }) {
   return order;
 }
 
-export function setStatus(order, status, { note = '', by = 'seller' } = {}) {
+export async function setStatus(order, status, { note = '', by = 'seller' } = {}) {
   if (!ORDER_STATUSES.includes(status)) return order;
   const previous = order.status;
-  order.status = status;
-  order.updatedAt = new Date().toISOString();
-  order.history = order.history || [];
-  order.history.push({ status, at: order.updatedAt, by, note });
+  const at = new Date().toISOString();
+  const patch = {
+    status,
+    updatedAt: at,
+    history: [...(order.history || []), { status, at, by, note }],
+  };
 
-  if (status === 'cancelled') releaseOrderInventory(order);
-  else if (previous === 'cancelled' && order.inventoryReleased) {
-    applyOrderToInventory(order.items);
-    order.inventoryReleased = false;
+  if (status === 'cancelled') {
+    if (await releaseOrderInventory(order)) patch.inventoryReleased = true;
+  } else if (previous === 'cancelled' && order.inventoryReleased) {
+    await applyOrderToInventory(order.items);
+    patch.inventoryReleased = false;
   }
-  if (['paid', 'shipped', 'completed'].includes(status)) commitOrderInventory(order);
+  if (['paid', 'shipped', 'completed'].includes(status)) {
+    if (await commitOrderInventory(order)) patch.inventoryCommitted = true;
+  }
 
-  save();
-  return order;
+  return (await orders.update(order.id, patch)) || { ...order, ...patch };
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,8 +246,7 @@ function itemRows(order) {
     .join('');
 }
 
-function wrapHtml(title, inner) {
-  const s = settings.get();
+function wrapHtml(title, inner, s) {
   return `<!doctype html><html><body style="margin:0;background:#f7f6f3;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0d0d0f">
   <div style="max-width:600px;margin:0 auto;padding:28px 20px">
     <div style="background:#0d0d0f;color:#fff;border-radius:14px;padding:22px 24px;margin-bottom:18px">
@@ -257,8 +258,8 @@ function wrapHtml(title, inner) {
   </div></body></html>`;
 }
 
-export function sendCustomerConfirmation(order) {
-  const s = settings.get();
+export async function sendCustomerConfirmation(order) {
+  const s = await settings.get();
   const text = [
     'Order received!',
     '',
@@ -296,6 +297,7 @@ export function sendCustomerConfirmation(order) {
     </table>
     <p style="background:#fff0eb;border-radius:10px;padding:14px;font-size:14px"><strong>No payment was taken online.</strong> ${esc(s.orderNotice)}</p>
     <p style="color:#6e6e78;font-size:13px">Delivery to ${esc(order.customer.address)}, ${esc(order.customer.postalCode)} ${esc(order.customer.city)} · ${esc(order.customer.deliveryMethod)}</p>`,
+    s,
   );
 
   return sendMail({
@@ -307,8 +309,8 @@ export function sendCustomerConfirmation(order) {
   });
 }
 
-export function sendSellerNotification(order) {
-  const s = settings.get();
+export async function sendSellerNotification(order) {
+  const s = await settings.get();
   const siteUrl = (process.env.SITE_URL || '').replace(/\/$/, '');
   const link = `${siteUrl}/admin/orders/${order.id}`;
   const text = [
@@ -354,6 +356,7 @@ export function sendSellerNotification(order) {
     </table>
     ${order.customer.note ? `<p style="background:#f1efec;border-radius:10px;padding:12px;font-size:14px"><strong>Note:</strong> ${esc(order.customer.note)}</p>` : ''}
     <p><a href="${esc(link)}" style="display:inline-block;background:#0d0d0f;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px">Open order in dashboard</a></p>`,
+    s,
   );
 
   return sendMail({

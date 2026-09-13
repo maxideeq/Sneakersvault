@@ -4,19 +4,22 @@ import { brandOf, isSoldOut, queryProducts, sizeAvailable, totalStock } from '..
 import { layout, icon } from './layout.js';
 import { breadcrumbs, productGrid, sectionHead, stockLine } from './components.js';
 
-export function productPage(product) {
-  const s = settings.get();
+export async function productPage(product) {
+  const [s, related] = await Promise.all([
+    settings.get(),
+    queryProducts({ brand: [brandOf(product).slug], availability: 'in-stock' }),
+  ]);
   const brand = brandOf(product);
   const images = product.images && product.images.length ? product.images : ['/img/placeholder.svg'];
   const soldOut = isSoldOut(product);
   const sizes = (product.sizes || []).slice().sort((a, b) => Number(a.size) - Number(b.size));
 
-  const related = queryProducts({ brand: [brand.slug], availability: 'in-stock' })
-    .items.filter((p) => p.id !== product.id)
-    .slice(0, 4);
-  const alsoLike = related.length
-    ? related
-    : queryProducts({ availability: 'in-stock', sort: 'popular' }).items.filter((p) => p.id !== product.id).slice(0, 4);
+  const sameBrand = related.items.filter((p) => p.id !== product.id).slice(0, 4);
+  const alsoLike = sameBrand.length
+    ? sameBrand
+    : (await queryProducts({ availability: 'in-stock', sort: 'popular' })).items
+        .filter((p) => p.id !== product.id)
+        .slice(0, 4);
 
   const clientData = {
     id: product.id,
@@ -132,7 +135,7 @@ export function productPage(product) {
   </div>
 
   <section class="section section--tight">
-    ${sectionHead(related.length ? `More from ${brand.name}` : 'You might also like', { kicker: 'Keep browsing', link: `/brands/${brand.slug}`, linkLabel: 'View brand' })}
+    ${sectionHead(sameBrand.length ? `More from ${brand.name}` : 'You might also like', { kicker: 'Keep browsing', link: `/brands/${brand.slug}`, linkLabel: 'View brand' })}
     ${productGrid(alsoLike, { eagerCount: 0, empty: 'Nothing else in stock right now.' })}
   </section>
 </div>
@@ -145,6 +148,7 @@ export function productPage(product) {
     active: 'sneakers',
     canonical: `/sneakers/${product.slug}`,
     ogImage: images[0],
+    settings: s,
     jsonLd: {
       '@context': 'https://schema.org',
       '@type': 'Product',
@@ -162,7 +166,7 @@ export function productPage(product) {
         itemCondition: /Deadstock/i.test(product.condition || '')
           ? 'https://schema.org/NewCondition'
           : 'https://schema.org/UsedCondition',
-        seller: { '@type': 'Organization', name: settings.get().storeName },
+        seller: { '@type': 'Organization', name: s.storeName },
       },
     },
   });

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800" role="img">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0" stop-color="#eaeaea"/>
+      <stop offset="1" stop-color="#d6d6d7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.44" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="rgba(0,0,0,0.26)"/>
+      <stop offset="1" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <ellipse cx="400" cy="400" rx="330" ry="270" fill="url(#glow)"/>
+  <ellipse cx="418" cy="628" rx="230" ry="30" fill="url(#shadow)"/>
+
+  <!-- box body -->
+  <polygon points="392,588 644,443 644,331 392,476" fill="#1c1c21"/>
+  <polygon points="392,588 242,502 242,390 392,476" fill="#16161a"/>
+  <polygon points="392,476 644,331 494,245 242,390" fill="#2e2e34"/>
+
+  <!-- tissue paper peeking out when the lid is lifted -->
+  
+
+  <!-- label -->
+  <polygon points="429.8,548.3 596.1,452.6 596.1,383.2 429.8,478.9" fill="#f2f2f1" opacity="0.97"/>
+  <g transform="matrix(0.866,-0.5,0,1,429.8,478.9)" fill="#0d0d0f">
+    <text x="16" y="24" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700"
+          letter-spacing="2.5">ASICS</text>
+    <rect x="16" y="32" width="104" height="5" rx="2.5" opacity="0.32"/>
+    <rect x="16" y="42" width="66" height="5" rx="2.5" opacity="0.22"/>
+    <rect x="16" y="52" width="4" height="12" opacity="0.45"/>
+    <rect x="23" y="52" width="2" height="12" opacity="0.45"/>
+    <rect x="30" y="52" width="2" height="12" opacity="0.45"/>
+    <rect x="37" y="52" width="4" height="12" opacity="0.45"/>
+    <rect x="44" y="52" width="2" height="12" opacity="0.45"/>
+    <rect x="51" y="52" width="2" height="12" opacity="0.45"/>
+    <rect x="58" y="52" width="4" height="12" opacity="0.45"/>
+    <rect x="65" y="52" width="2" height="12" opacity="0.45"/>
+    <rect x="72" y="52" width="2" height="12" opacity="0.45"/>
+  </g>
+
+  <!-- brand band across the body -->
+  <polygon points="392,570.1 644,425.1 644,413.9 392,558.9" fill="#2f2f37" opacity="0.85"/>
+
+  <!-- lid -->
+  <polygon points="389.2,482.4 655.1,329.4 655.1,287.4 389.2,440.4" fill="#1e1e24"/>
+  <polygon points="389.2,482.4 230.9,391.6 230.9,349.6 389.2,440.4" fill="#18181c"/>
+  <polygon points="389.2,440.4 655.1,287.4 496.8,196.6 230.9,349.6" fill="#404045"/>
+  <polygon points="453,403.6 591.2,324.1 433,233.4 294.8,312.9" fill="#3a3a42" opacity="0.22"/>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "name": "sole-society",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sole Society — premium sneaker reselling storefront with order-first checkout and seller dashboard",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node scripts/seed.js",
+    "reset": "node scripts/seed.js --force",
+    "images": "node scripts/images.js",
+    "test:e2e": "node scripts/e2e.mjs",
+    "shots": "node scripts/shots.mjs"
+  }
+}
